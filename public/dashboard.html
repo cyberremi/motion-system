@@ -17,31 +17,33 @@
     const socket = io();
     const pc = new RTCPeerConnection();
 
+    // Remote video
     pc.ontrack = event => {
-      console.log("[RTC] Got remote track");
       document.getElementById('remoteVideo').srcObject = event.streams[0];
     };
 
+    // Send ICE candidates
     pc.onicecandidate = ({ candidate }) => {
-      if (candidate) socket.emit("ice-candidate", candidate);
+      if (candidate) socket.emit('ice-candidate', candidate);
     };
 
-    socket.on("offer", async offer => {
-      console.log("[SOCKET] Got offer");
+    // Receive offer from phone
+    socket.on('offer', async offer => {
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
-      socket.emit("answer", answer);
+      socket.emit('answer', answer);
     });
 
-    socket.on("ice-candidate", async cand => {
+    // Receive ICE from phone
+    socket.on('ice-candidate', async cand => {
       try { await pc.addIceCandidate(new RTCIceCandidate(cand)); } catch(e) {}
     });
 
-    // AI overlay
-    const video = document.getElementById("remoteVideo");
-    const canvas = document.getElementById("overlay");
-    const ctx = canvas.getContext("2d");
+    // AI detection overlay
+    const video = document.getElementById('remoteVideo');
+    const canvas = document.getElementById('overlay');
+    const ctx = canvas.getContext('2d');
 
     async function runDetection() {
       const model = await cocoSsd.load();
@@ -61,7 +63,7 @@
             ctx.fillText(`${p.class} ${Math.round(p.score*100)}%`, p.bbox[0], p.bbox[1] > 10 ? p.bbox[1]-5 : 10);
           });
         }
-      }, 300);
+      }, 200);
     }
     runDetection();
   </script>
