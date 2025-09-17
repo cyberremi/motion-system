@@ -170,8 +170,89 @@
     setTimeout(()=> overlay.style.outline = "none", 250);
   }
 </script>
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  // ====== Live Chart ======
+  const ctx = document.getElementById("detectionChart").getContext("2d");
+  const detectionChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: [],
+      datasets: [{
+        label: "Detections",
+        data: [],
+        borderColor: "#007bff",
+        backgroundColor: "rgba(0,123,255,0.2)",
+        tension: 0.3
+      }]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        x: { title: { display: true, text: "Time" } },
+        y: { title: { display: true, text: "Detections" }, beginAtZero: true }
+      }
+    }
+  });
+
+  // Simulate detection events (replace with real socket data)
+  setInterval(() => {
+    const now = new Date().toLocaleTimeString();
+    const value = Math.floor(Math.random() * 5); // fake detection count
+
+    detectionChart.data.labels.push(now);
+    detectionChart.data.datasets[0].data.push(value);
+    detectionChart.update();
+  }, 3000);
+
+  // ====== Comment Feature ======
+  const commentForm = document.getElementById("commentForm");
+  const commentInput = document.getElementById("commentInput");
+  const commentList = document.getElementById("commentList");
+
+  commentForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = commentInput.value.trim();
+    if (!text) return;
+
+    const li = document.createElement("li");
+    li.textContent = "You: " + text;
+    commentList.appendChild(li);
+
+    // TODO: Send comment to backend/socket here
+    commentInput.value = "";
+  });
+
+  // ====== Dark/Light Mode Toggle ======
+  const toggleBtn = document.getElementById("themeToggle");
+  toggleBtn.addEventListener("click", () => {
+    document.body.classList.toggle("dark-mode");
+  });
+
+  // ====== Export Report (CSV) ======
+  document.getElementById("exportBtn").addEventListener("click", () => {
+    let csv = "Time,Detections\n";
+    detectionChart.data.labels.forEach((label, i) => {
+      csv += `${label},${detectionChart.data.datasets[0].data[i]}\n`;
+    });
+
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "report.csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  });
+});
+</script>
 
 </body>
 </html>
+
 
 
