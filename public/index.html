@@ -1,0 +1,31 @@
+<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Login — Demo</title>
+<link rel="stylesheet" href="styles.css"/></head><body>
+<div class="center">
+  <div class="card login-card">
+    <h1>Smart Security Demo</h1>
+    <p class="small">Admin: admin / 1234 • User: user / 1234</p>
+    <form id="loginForm" class="form">
+      <label>Username<input id="u" required autocomplete="username"></label>
+      <label>Password<input id="p" type="password" required autocomplete="current-password"></label>
+      <div class="row">
+        <button class="btn" type="submit">Sign in</button>
+        <button id="theme" type="button" class="btn ghost">Toggle Theme</button>
+      </div>
+      <div id="err" class="small hidden">Wrong credentials</div>
+    </form>
+  </div>
+</div>
+<script>
+const C={admin:'1234',user:'1234'};
+document.getElementById('loginForm').addEventListener('submit',(e)=>{e.preventDefault();const u=document.getElementById('u').value.trim();const p=document.getElementById('p').value; if(C[u]&&C[u]===p){localStorage.setItem('ss_role',u); document.body.innerHTML='<div class="center"><div class="card">Authenticating…</div></div>'; setTimeout(()=>location.href='dashboard.html',800);} else {document.getElementById('err').classList.remove('hidden'); setTimeout(()=>document.getElementById('err').classList.add('hidden'),2000);} });
+document.getElementById('theme').addEventListener('click',()=>{document.body.classList.toggle('light');localStorage.setItem('ss_theme',document.body.classList.contains('light')?'light':'dark');});
+if(localStorage.getItem('ss_theme')==='light') document.body.classList.add('light');
+</script>
+
+<!-- Three.js core (modern version) -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+
+<!-- OrbitControls (modern, compatible with 0.158) -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.158.0/examples/js/controls/OrbitControls.js"></script>
+
+</body></html>
