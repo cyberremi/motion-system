@@ -122,6 +122,56 @@
     }
     socket.on('disconnect', () => { statusEl.textContent = 'Status: disconnected' });
   </script>
+  <script>
+  const liveImg = document.getElementById("liveImg");
+  const overlay = document.getElementById("overlay");
+  const logEl = document.getElementById("log");
+  const socket = io();
+
+  const alarm = new Audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg");
+
+  function log(t) {
+    logEl.textContent += `[${new Date().toLocaleTimeString()}] ${t}\n`;
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  // Refresh live image by busting cache
+  function refreshImg() {
+    liveImg.src = "/frame.jpg?t=" + Date.now();
+    setTimeout(refreshImg, 200); // ~5 fps
+  }
+  refreshImg();
+
+  socket.on("detection", (ev) => {
+    log(`[DETECT] ${ev.label} ${Math.round(ev.confidence * 100)}%`);
+    drawBox(ev);
+
+    if (ev.label === "person") {
+      alarm.play().catch(()=>{});
+      flashOverlay();
+    }
+  });
+
+  function drawBox(ev) {
+    const ctx = overlay.getContext("2d");
+    overlay.width = ev.w;
+    overlay.height = ev.h;
+    ctx.clearRect(0, 0, overlay.width, overlay.height);
+    ctx.strokeStyle = "lime";
+    ctx.lineWidth = 3;
+    ctx.font = "16px Arial";
+    ctx.fillStyle = "rgba(0,255,0,0.7)";
+    ctx.strokeRect(ev.bbox[0], ev.bbox[1], ev.bbox[2], ev.bbox[3]);
+    ctx.fillText(`${ev.label} ${Math.round(ev.confidence*100)}%`, ev.bbox[0]+5, ev.bbox[1]-5);
+  }
+
+  function flashOverlay() {
+    overlay.style.outline = "5px solid red";
+    setTimeout(()=> overlay.style.outline = "none", 250);
+  }
+</script>
+
 </body>
 </html>
+
 
