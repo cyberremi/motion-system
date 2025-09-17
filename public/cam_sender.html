@@ -39,157 +39,161 @@
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
 
   <script>
-    const logEl = document.getElementById('log');
-    const video = document.getElementById('video');
-    const overlay = document.getElementById('overlay');
-    const startBtn = document.getElementById('startBtn');
-    const stopBtn = document.getElementById('stopBtn');
-    const intervalInput = document.getElementById('intervalInput');
-    const qualityInput = document.getElementById('qualityInput');
-    const threshInput = document.getElementById('threshInput');
+  const logEl = document.getElementById('log');
+  const video = document.getElementById('video');
+  const overlay = document.getElementById('overlay');
+  const startBtn = document.getElementById('startBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const intervalInput = document.getElementById('intervalInput');
+  const qualityInput = document.getElementById('qualityInput');
+  const threshInput = document.getElementById('threshInput');
 
-    const socket = io();
-    let model = null;
-    let stream = null;
-    let running = false;
-    let sendTimer = null;
+  const socket = io();
+  let model = null;
+  let stream = null;
+  let running = false;
+  let sendTimer = null;
 
-    const snap = document.createElement('canvas');
-    const sctx = snap.getContext('2d');
+  const snap = document.createElement('canvas');
+  const sctx = snap.getContext('2d');
 
-    function log(t) {
-      console.log(t);
-      logEl.textContent += `[${new Date().toLocaleTimeString()}] ${t}\n`;
-      logEl.scrollTop = logEl.scrollHeight;
+  // Alarm sound
+  const alarm = new Audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg");
+
+  function log(t) {
+    console.log(t);
+    logEl.textContent += `[${new Date().toLocaleTimeString()}] ${t}\n`;
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  async function start() {
+    log('[LOCAL] loading model...');
+    try {
+      model = await cocoSsd.load();
+      log('[MODEL] coco-ssd loaded');
+    } catch (e) {
+      log('[MODEL ERR] ' + e.message);
+      return;
     }
 
-    async function start() {
-      log('[LOCAL] loading model...');
-      try {
-        model = await cocoSsd.load();
-        log('[MODEL] coco-ssd loaded');
-      } catch (e) {
-        log('[MODEL ERR] ' + e.message);
-        return;
-      }
-
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
-          audio: false
-        });
-        video.srcObject = stream;
-        await video.play();
-      } catch (e) {
-        log('[CAM ERR] ' + e.message);
-        return;
-      }
-
-      overlay.width = video.videoWidth || 480;
-      overlay.height = video.videoHeight || 360;
-
-      snap.width = 480;
-      snap.height = Math.round((video.videoHeight / (video.videoWidth || 480)) * 480) || 360;
-
-      running = true;
-      startBtn.disabled = true;
-      stopBtn.disabled = false;
-
-      detectLoop();
-      scheduleSend();
-      log('[LOCAL] started');
-    }
-
-    function stop() {
-      running = false;
-      if (sendTimer) { clearTimeout(sendTimer); sendTimer = null; }
-      if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
-      video.srcObject = null;
-      startBtn.disabled = false;
-      stopBtn.disabled = true;
-      log('[LOCAL] stopped');
-    }
-
-    async function detectLoop() {
-      if (!running) return;
-      if (model && video.readyState >= 2) {
-        try {
-          const preds = await model.detect(video, 6);
-          drawPreds(preds);
-          const threshold = parseFloat(threshInput.value) || 0.45;
-          preds.forEach(p => {
-            if (p.score >= threshold) {
-              // build event
-              const ev = { label: p.class, confidence: p.score, bbox: p.bbox, w: video.videoWidth, h: video.videoHeight };
-              socket.emit('detection', ev);
-              log(`[DETECT] ${ev.label} ${Math.round(ev.confidence*100)}%`);
-            }
-          });
-        } catch (err) {
-          console.warn('detect err', err);
-        }
-      }
-      requestAnimationFrame(detectLoop);
-    }
-
-    function drawPreds(preds) {
-      const ctx = overlay.getContext('2d');
-      overlay.width = video.videoWidth || overlay.width;
-      overlay.height = video.videoHeight || overlay.height;
-      ctx.clearRect(0,0,overlay.width,overlay.height);
-      ctx.strokeStyle = '#00FF77';
-      ctx.lineWidth = 2;
-      ctx.font = '18px Inter, Arial';
-      ctx.fillStyle = 'rgba(0,255,119,0.85)';
-      preds.forEach(p => {
-        const [x,y,w,h] = p.bbox;
-        ctx.strokeRect(x,y,w,h);
-        const txt = `${p.class} ${Math.round(p.score*100)}%`;
-        ctx.fillText(txt, x + 6, y > 18 ? y - 6 : y + 18);
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 360 } },
+        audio: false
       });
+      video.srcObject = stream;
+      await video.play();
+    } catch (e) {
+      log('[CAM ERR] ' + e.message);
+      return;
     }
 
-    // Sends snapshot to /frame using multipart/form-data (fast)
-    async function scheduleSend() {
-      if (!running) return;
-      const intervalMs = Math.max(40, parseInt(intervalInput.value || '60'));
+    overlay.width = video.videoWidth || 640;
+    overlay.height = video.videoHeight || 360;
+
+    // smaller snapshot for speed
+    snap.width = 320;
+    snap.height = 180;
+
+    running = true;
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+
+    detectLoop();
+    scheduleSend();
+    log('[LOCAL] started');
+  }
+
+  function stop() {
+    running = false;
+    if (sendTimer) { clearTimeout(sendTimer); sendTimer = null; }
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+    video.srcObject = null;
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    log('[LOCAL] stopped');
+  }
+
+  async function detectLoop() {
+    if (!running) return;
+    if (model && video.readyState >= 2) {
       try {
-        // draw to snapshot canvas in source resolution
-        sctx.drawImage(video, 0, 0, snap.width, snap.height);
-        const quality = Math.min(1, Math.max(0.2, parseFloat(qualityInput.value || '0.6')));
-        snap.toBlob(async (blob) => {
-          if (!blob) {
-            sendTimer = setTimeout(scheduleSend, intervalMs);
-            return;
-          }
-          try {
-            const fd = new FormData();
-            fd.append('frame', blob, 'frame.jpg');
-            const resp = await fetch('/frame', { method: 'POST', body: fd });
-            if (resp && resp.ok) {
-              // occasional log
-              if (Math.random() < 0.06) log('[POST] frame uploaded');
-            } else {
-              log('[POST ERR] non-OK response');
+        const preds = await model.detect(video, 6);
+        drawPreds(preds);
+        const threshold = parseFloat(threshInput.value) || 0.45;
+        preds.forEach(p => {
+          if (p.score >= threshold) {
+            const ev = { label: p.class, confidence: p.score, bbox: p.bbox, w: video.videoWidth, h: video.videoHeight };
+            socket.emit('detection', ev);
+            log(`[DETECT] ${ev.label} ${Math.round(ev.confidence*100)}%`);
+
+            // Instant alarm for "person"
+            if (p.class === "person") {
+              alarm.play().catch(()=>{});
+              flashOverlay();
             }
-          } catch (err) {
-            log('[POST ERR] ' + err.message);
-          } finally {
-            sendTimer = setTimeout(scheduleSend, intervalMs);
           }
-        }, 'image/jpeg', quality);
+        });
       } catch (err) {
-        console.error('[SNAP ERR]', err);
-        sendTimer = setTimeout(scheduleSend, intervalMs);
+        console.warn('detect err', err);
       }
     }
+    requestAnimationFrame(detectLoop);
+  }
 
-    startBtn.onclick = start;
-    stopBtn.onclick = stop;
+  function drawPreds(preds) {
+    const ctx = overlay.getContext('2d');
+    ctx.clearRect(0,0,overlay.width,overlay.height);
+    ctx.strokeStyle = '#00FF77';
+    ctx.lineWidth = 2;
+    ctx.font = '16px Inter, Arial';
+    ctx.fillStyle = 'rgba(0,255,119,0.85)';
+    preds.forEach(p => {
+      const [x,y,w,h] = p.bbox;
+      ctx.strokeRect(x,y,w,h);
+      const txt = `${p.class} ${Math.round(p.score*100)}%`;
+      ctx.fillText(txt, x + 6, y > 18 ? y - 6 : y + 18);
+    });
+  }
 
-    socket.on('connect', () => log('[SOCKET] connected ' + socket.id));
-    socket.on('disconnect', () => log('[SOCKET] disconnected ' + socket.id));
-  </script>
+  // Overlay flash effect
+  function flashOverlay() {
+    overlay.style.border = "5px solid red";
+    setTimeout(()=> overlay.style.border = "none", 300);
+  }
+
+  // Faster frame sending with dataURL
+  async function scheduleSend() {
+    if (!running) return;
+    const intervalMs = Math.max(30, parseInt(intervalInput.value || '80')); // ~12 FPS
+    try {
+      sctx.drawImage(video, 0, 0, snap.width, snap.height);
+      const quality = Math.min(1, Math.max(0.2, parseFloat(qualityInput.value || '0.5')));
+      const jpegData = snap.toDataURL('image/jpeg', quality);
+
+      // send as base64 in body
+      const resp = await fetch('/frame', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ frame: jpegData })
+      });
+
+      if (!resp.ok) log('[POST ERR] non-OK response');
+    } catch (err) {
+      log('[POST ERR] ' + err.message);
+    } finally {
+      sendTimer = setTimeout(scheduleSend, intervalMs);
+    }
+  }
+
+  startBtn.onclick = start;
+  stopBtn.onclick = stop;
+
+  socket.on('connect', () => log('[SOCKET] connected ' + socket.id));
+  socket.on('disconnect', () => log('[SOCKET] disconnected ' + socket.id));
+</script>
+
 </body>
 </html>
+
 
