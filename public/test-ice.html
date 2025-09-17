@@ -1,0 +1,41 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Xirsys ICE Test</title>
+</head>
+<body>
+  <h2>Xirsys ICE Test</h2>
+  <pre id="output">Loading...</pre>
+  <script>
+    const output = document.getElementById("output");
+
+    async function testXirsys() {
+      try {
+        const ident = "nextgen";
+        const secret = "4bf91cfc-9376-11f0-b688-2600e51006ed";
+        const channel = "camera-test";
+
+        // Encode auth header
+        const auth = btoa(`${ident}:${secret}`);
+
+        const res = await fetch(`https://global.xirsys.net/_turn/${channel}`, {
+          method: "PUT",
+          headers: {
+            "Authorization": "Basic " + auth,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ format: "urls" })
+        });
+
+        const data = await res.json();
+        output.textContent = JSON.stringify(data, null, 2);
+      } catch (err) {
+        output.textContent = "Error: " + err;
+      }
+    }
+
+    testXirsys();
+  </script>
+</body>
+</html>
