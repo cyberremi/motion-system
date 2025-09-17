@@ -38,7 +38,23 @@
 
     (async function init() {
       const iceConfig = await fetchIce();
-      pc = new RTCPeerConnection(iceConfig);
+const pc = new RTCPeerConnection({
+  iceServers: [
+    {
+      urls: [
+        "stun:fr-turn4.xirsys.com",
+        "turn:fr-turn4.xirsys.com:80?transport=udp",
+        "turn:fr-turn4.xirsys.com:3478?transport=udp",
+        "turn:fr-turn4.xirsys.com:80?transport=tcp",
+        "turn:fr-turn4.xirsys.com:3478?transport=tcp",
+        "turns:fr-turn4.xirsys.com:443?transport=tcp",
+        "turns:fr-turn4.xirsys.com:5349?transport=tcp"
+      ],
+      username: "sP-1rZ77TuXbd6lPQNfqcNiA-Z9DnhVEcxmXWeLkoMoJ6t5JS1WvVH5C3KY0P7d4AAAAAGjKL_JuZXh0Z2Vu",
+      credential: "68afc956-9379-11f0-88ab-66154ddf53b4"
+    }
+  ]
+});
 
       pc.oniceconnectionstatechange = () => {
         L('[PC][viewer] iceConnectionState=' + pc.iceConnectionState);
@@ -126,3 +142,4 @@
   </script>
 </body>
 </html>
+
