@@ -48,6 +48,25 @@
         <div id="events"></div>
       </div>
     </div>
+<!-- Graph -->
+<canvas id="detectionChart" height="120"></canvas>
+
+<!-- Comment Section -->
+<div class="comments">
+  <h3>Comments</h3>
+  <ul id="commentList"></ul>
+  <form id="commentForm">
+    <input type="text" id="commentInput" placeholder="Type a comment..." required>
+    <button type="submit">Send</button>
+  </form>
+</div>
+
+<!-- Controls -->
+<div class="controls">
+  <button id="themeToggle">🌙 Toggle Dark Mode</button>
+  <button id="exportBtn">📥 Export Report</button>
+</div>
+
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
@@ -253,6 +272,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
 </body>
 </html>
+
 
 
 
