@@ -2,67 +2,74 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Camera Publisher</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Publisher - Camera</title>
   <style>
-    video { width: 100%; max-width: 400px; border: 2px solid #333; }
+    body { font-family: system-ui, Arial; padding: 12px; }
+    video { width: 100%; max-width: 720px; }
   </style>
 </head>
 <body>
-  <h2>📷 Camera Publisher</h2>
-  <video id="localVideo" autoplay playsinline muted></video>
+  <h2>Publisher (Phone) — Camera</h2>
+  <video id="video" autoplay playsinline></video><br>
+  <button id="startBtn">Start Camera</button>
+  <button id="stopBtn">Stop</button>
+
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const socket = io();
+    let pc, stream;
 
-    // Xirsys ICE servers
-   iceServers: [
-  {
-    urls: [
-      "stun:fr-turn3.xirsys.com",
-      "turn:fr-turn3.xirsys.com:80?transport=udp",
-      "turn:fr-turn3.xirsys.com:3478?transport=udp",
-      "turn:fr-turn3.xirsys.com:80?transport=tcp",
-      "turn:fr-turn3.xirsys.com:3478?transport=tcp",
-      "turns:fr-turn3.xirsys.com:443?transport=tcp",
-      "turns:fr-turn3.xirsys.com:5349?transport=tcp"
-    ],
-    username: "KpaoU7W39y48OAReHa1rfaC43p88PFWamtxFo57v-PnylGGxV7bN3RPB3XZS1ZSTAAAAAGjKiE9uZXh0Z2Vu",
-    credential: "13dbac6c-93ae-11f0-8b07-e25abca605ee"
-  }
-]
+    const iceConfig = {
+      iceServers: [
+        {
+          urls: [
+            "stun:fr-turn3.xirsys.com",
+            "turn:fr-turn3.xirsys.com:80?transport=udp",
+            "turn:fr-turn3.xirsys.com:3478?transport=udp",
+            "turn:fr-turn3.xirsys.com:80?transport=tcp",
+            "turn:fr-turn3.xirsys.com:3478?transport=tcp",
+            "turns:fr-turn3.xirsys.com:443?transport=tcp",
+            "turns:fr-turn3.xirsys.com:5349?transport=tcp"
+          ],
+          username: "KpaoU7W39y48OAReHa1rfaC43p88PFWamtxFo57v-PnylGGxV7bN3RPB3XZS1ZSTAAAAAGjKiE9uZXh0Z2Vu",
+          credential: "13dbac6c-93ae-11f0-8b07-e25abca605ee"
+        }
+      ]
+    };
 
-    });
+    document.getElementById("startBtn").onclick = async () => {
+      stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      document.getElementById("video").srcObject = stream;
 
-    const videoEl = document.getElementById('localVideo');
-
-    async function start() {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      pc = new RTCPeerConnection(iceConfig);
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
-      videoEl.srcObject = stream;
+
+      pc.onicecandidate = e => {
+        if (e.candidate) socket.emit("candidate", e.candidate);
+      };
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      socket.emit('offer', offer);
+      socket.emit("offer", offer);
+    };
 
-      pc.onicecandidate = e => {
-        if (e.candidate) socket.emit('candidate', e.candidate);
-      };
-    }
+    document.getElementById("stopBtn").onclick = () => {
+      stream?.getTracks().forEach(track => track.stop());
+      pc?.close();
+    };
 
-    socket.on('answer', async (answer) => {
-      await pc.setRemoteDescription(answer);
+    socket.on("answer", async (answer) => {
+      await pc.setRemoteDescription(new RTCSessionDescription(answer));
     });
 
-    socket.on('candidate', async (candidate) => {
+    socket.on("candidate", async (candidate) => {
       try {
-        await pc.addIceCandidate(candidate);
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
       } catch (err) {
-        console.error("Error adding candidate", err);
+        console.error("Error adding ICE candidate", err);
       }
     });
-
-    start();
   </script>
 </body>
 </html>
-
