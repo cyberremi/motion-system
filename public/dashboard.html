@@ -1,145 +1,61 @@
 <!doctype html>
 <html>
-<head><meta charset="utf-8"><title>Dashboard Viewer</title></head>
+<head>
+  <meta charset="utf-8">
+  <title>Dashboard Viewer</title>
+  <style>
+    video { width: 100%; max-width: 600px; border: 2px solid #333; }
+  </style>
+</head>
 <body>
-  <h2>Dashboard Viewer</h2>
-  <div id="status">status: idle</div>
-  <video id="remoteVideo" autoplay playsinline style="width:100%;max-width:720px;background:#000"></video>
-  <canvas id="overlay" style="position:relative;max-width:720px"></canvas>
-  <pre id="log" style="height:160px;overflow:auto;background:#f6f6f6;padding:6px"></pre>
-
+  <h2>📺 Dashboard Viewer</h2>
+  <video id="remoteVideo" autoplay playsinline></video>
   <script src="/socket.io/socket.io.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.13.0"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
-
   <script>
-    const statusEl = document.getElementById('status');
-    const logEl = document.getElementById('log');
-    const video = document.getElementById('remoteVideo');
-    const overlay = document.getElementById('overlay');
-    const ctx = overlay.getContext('2d');
-
-    function L(m) { console.log(m); logEl.textContent += m + '\n'; logEl.scrollTop = logEl.scrollHeight; }
-
     const socket = io();
-    let pc = null;
 
-    async function fetchIce() {
-      try {
-        const r = await fetch('/ice');
-        const json = await r.json();
-        L('[ICE] got config; servers=' + (json.iceServers?.length || 0));
-        return json;
-      } catch (e) {
-        L('[ICE] fetch failed, fallback to STUN: ' + e.message);
-        return { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
-      }
-    }
-
-    (async function init() {
-      const iceConfig = await fetchIce();
-const pc = new RTCPeerConnection({
-  iceServers: [
-    {
-      urls: [
-        "stun:fr-turn4.xirsys.com",
-        "turn:fr-turn4.xirsys.com:80?transport=udp",
-        "turn:fr-turn4.xirsys.com:3478?transport=udp",
-        "turn:fr-turn4.xirsys.com:80?transport=tcp",
-        "turn:fr-turn4.xirsys.com:3478?transport=tcp",
-        "turns:fr-turn4.xirsys.com:443?transport=tcp",
-        "turns:fr-turn4.xirsys.com:5349?transport=tcp"
-      ],
-      username: "sP-1rZ77TuXbd6lPQNfqcNiA-Z9DnhVEcxmXWeLkoMoJ6t5JS1WvVH5C3KY0P7d4AAAAAGjKL_JuZXh0Z2Vu",
-      credential: "68afc956-9379-11f0-88ab-66154ddf53b4"
-    }
-  ]
-});
-
-      pc.oniceconnectionstatechange = () => {
-        L('[PC][viewer] iceConnectionState=' + pc.iceConnectionState);
-        statusEl.textContent = 'status: ' + pc.iceConnectionState;
-      };
-
-      pc.onicecandidate = (e) => {
-        if (e.candidate) {
-          L('[PC][viewer] send candidate: ' + e.candidate.candidate);
-          socket.emit('ice-candidate', e.candidate);
+    const pc = new RTCPeerConnection({
+      iceServers: [
+        {
+          urls: [
+            "stun:fr-turn4.xirsys.com",
+            "turn:fr-turn4.xirsys.com:80?transport=udp",
+            "turn:fr-turn4.xirsys.com:3478?transport=udp",
+            "turn:fr-turn4.xirsys.com:80?transport=tcp",
+            "turn:fr-turn4.xirsys.com:3478?transport=tcp",
+            "turns:fr-turn4.xirsys.com:443?transport=tcp",
+            "turns:fr-turn4.xirsys.com:5349?transport=tcp"
+          ],
+          username: "sP-1rZ77TuXbd6lPQNfqcNiA-Z9DnhVEcxmXWeLkoMoJ6t5JS1WvVH5C3KY0P7d4AAAAAGjKL_JuZXh0Z2Vu",
+          credential: "68afc956-9379-11f0-88ab-66154ddf53b4"
         }
-      };
+      ]
+    });
 
-      pc.ontrack = (event) => {
-        L('[PC][viewer] got remote track');
-        video.srcObject = event.streams[0];
-      };
+    const videoEl = document.getElementById('remoteVideo');
 
-      socket.on('connect', () => L('[SOCKET][viewer] connected ' + socket.id));
+    pc.ontrack = (event) => {
+      videoEl.srcObject = event.streams[0];
+    };
 
-      socket.on('offer', async (offer) => {
-        try {
-          L('[SOCKET][viewer] got offer');
-          await pc.setRemoteDescription(new RTCSessionDescription(offer));
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          socket.emit('answer', answer);
-          L('[PC][viewer] sent answer');
-        } catch (e) { L('[viewer] handle offer err ' + e); }
-      });
+    socket.on('offer', async (offer) => {
+      await pc.setRemoteDescription(offer);
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      socket.emit('answer', answer);
+    });
 
-      socket.on('ice-candidate', async (cand) => {
-        try {
-          await pc.addIceCandidate(new RTCIceCandidate(cand));
-          L('[SOCKET][viewer] added remote candidate');
-        } catch (e) { L('[viewer] addIceCandidate err ' + e); }
-      });
-
-      // periodic stats checker to detect whether TURN (relay) is used
-      async function checkStats() {
-        if (!pc) return;
-        try {
-          const stats = await pc.getStats();
-          let usedRelay = false;
-          stats.forEach(report => {
-            if (report.type === 'candidate-pair' && report.state === 'succeeded') {
-              const local = stats.get(report.localCandidateId);
-              const remote = stats.get(report.remoteCandidateId);
-              if (local && remote) {
-                L('[STATS] pair state succeeded; localType=' + local.candidateType + ' remoteType=' + remote.candidateType);
-                // relay means TURN is used
-                if (local.candidateType === 'relay' || remote.candidateType === 'relay') usedRelay = true;
-                // show to DOM
-                statusEl.textContent = 'status: ' + pc.iceConnectionState + ' | usingTURN=' + (usedRelay ? 'YES' : 'NO');
-              }
-            }
-          });
-        } catch (e) {
-          // ignore
-        }
-        setTimeout(checkStats, 3000);
-      }
-      setTimeout(checkStats, 5000);
-
-      // optional detection overlay (runs in viewer)
+    socket.on('candidate', async (candidate) => {
       try {
-        const model = await cocoSsd.load();
-        L('[DETECTION] COCO-SSD loaded');
-        setInterval(async () => {
-          if (video.readyState !== 4) return;
-          overlay.width = video.videoWidth;
-          overlay.height = video.videoHeight;
-          ctx.drawImage(video, 0, 0, overlay.width, overlay.height);
-          const preds = await model.detect(video);
-          ctx.strokeStyle = 'red'; ctx.lineWidth = 2; ctx.font = '16px Arial'; ctx.fillStyle = 'red';
-          preds.forEach(p => {
-            ctx.strokeRect(...p.bbox);
-            ctx.fillText(`${p.class} ${Math.round(p.score*100)}%`, p.bbox[0], p.bbox[1] > 16 ? p.bbox[1]-4 : p.bbox[1]+12);
-          });
-        }, 300);
-      } catch (e) {
-        L('[DETECTION] model load failed: ' + e);
+        await pc.addIceCandidate(candidate);
+      } catch (err) {
+        console.error("Error adding candidate", err);
       }
-    })();
+    });
+
+    pc.onicecandidate = e => {
+      if (e.candidate) socket.emit('candidate', e.candidate);
+    };
   </script>
 </body>
 </html>
-
