@@ -1,154 +1,67 @@
 <!doctype html>
 <html>
-<head><meta charset="utf-8"><title>Camera Sender</title></head>
+<head>
+  <meta charset="utf-8">
+  <title>Camera Publisher</title>
+  <style>
+    video { width: 100%; max-width: 400px; border: 2px solid #333; }
+  </style>
+</head>
 <body>
-  <h2>Camera Sender</h2>
-  <div id="status">status: idle</div>
-  <button id="startBtn">Start Camera</button>
-  <button id="stopBtn" disabled>Stop</button>
-  <video id="localVideo" autoplay playsinline muted style="width:100%;max-width:420px;background:#000"></video>
-  <pre id="log" style="height:160px;overflow:auto;background:#f6f6f6;padding:6px"></pre>
-
+  <h2>📷 Camera Publisher</h2>
+  <video id="localVideo" autoplay playsinline muted></video>
   <script src="/socket.io/socket.io.js"></script>
   <script>
-    const statusEl = document.getElementById('status');
-    const logEl = document.getElementById('log');
-    const startBtn = document.getElementById('startBtn');
-    const stopBtn = document.getElementById('stopBtn');
-    const localVideo = document.getElementById('localVideo');
-
-    function L(msg) { console.log(msg); logEl.textContent += msg + '\n'; logEl.scrollTop = logEl.scrollHeight; }
-
     const socket = io();
-    let pc = null;
-    let stream = null;
-    let dc = null;
-    let keepaliveInterval = null;
 
-    async function fetchIce() {
-      try {
-        const r = await fetch('/ice');
-        const json = await r.json();
-        L('[ICE] fetched config: ' + JSON.stringify(json.iceServers?.length ? {iceServersCount: json.iceServers.length} : json));
-        return json;
-      } catch (e) {
-        L('[ICE] fetch failed, falling back to STUN: ' + e.message);
-        return { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
-      }
-    }
+    // Xirsys ICE servers
+    const pc = new RTCPeerConnection({
+      iceServers: [
+        {
+          urls: [
+            "stun:fr-turn4.xirsys.com",
+            "turn:fr-turn4.xirsys.com:80?transport=udp",
+            "turn:fr-turn4.xirsys.com:3478?transport=udp",
+            "turn:fr-turn4.xirsys.com:80?transport=tcp",
+            "turn:fr-turn4.xirsys.com:3478?transport=tcp",
+            "turns:fr-turn4.xirsys.com:443?transport=tcp",
+            "turns:fr-turn4.xirsys.com:5349?transport=tcp"
+          ],
+          username: "sP-1rZ77TuXbd6lPQNfqcNiA-Z9DnhVEcxmXWeLkoMoJ6t5JS1WvVH5C3KY0P7d4AAAAAGjKL_JuZXh0Z2Vu",
+          credential: "68afc956-9379-11f0-88ab-66154ddf53b4"
+        }
+      ]
+    });
+
+    const videoEl = document.getElementById('localVideo');
 
     async function start() {
-      startBtn.disabled = true;
-      try {
-        const iceConfig = await fetchIce();
-      const pc = new RTCPeerConnection({
-  iceServers: [
-    {
-      urls: [
-        "stun:fr-turn4.xirsys.com",
-        "turn:fr-turn4.xirsys.com:80?transport=udp",
-        "turn:fr-turn4.xirsys.com:3478?transport=udp",
-        "turn:fr-turn4.xirsys.com:80?transport=tcp",
-        "turn:fr-turn4.xirsys.com:3478?transport=tcp",
-        "turns:fr-turn4.xirsys.com:443?transport=tcp",
-        "turns:fr-turn4.xirsys.com:5349?transport=tcp"
-      ],
-      username: "sP-1rZ77TuXbd6lPQNfqcNiA-Z9DnhVEcxmXWeLkoMoJ6t5JS1WvVH5C3KY0P7d4AAAAAGjKL_JuZXh0Z2Vu",
-      credential: "68afc956-9379-11f0-88ab-66154ddf53b4"
-    }
-  ]
-});
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+      videoEl.srcObject = stream;
 
-        pc.oniceconnectionstatechange = () => {
-          L('[PC][sender] iceConnectionState=' + pc.iceConnectionState);
-          statusEl.textContent = 'status: ' + pc.iceConnectionState;
-        };
-        pc.onicecandidate = (e) => {
-          if (e.candidate) {
-            L('[PC][sender] send candidate: ' + e.candidate.candidate);
-            socket.emit('ice-candidate', e.candidate);
-          }
-        };
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socket.emit('offer', offer);
 
-        // data channel for NAT keepalive
-        dc = pc.createDataChannel('keepalive');
-        dc.onopen = () => L('[DC] keepalive open');
-        dc.onmessage = (ev) => L('[DC] got: ' + ev.data);
-
-        // get camera
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1024 } }, audio: false });
-        localVideo.srcObject = stream;
-        stream.getTracks().forEach(t => pc.addTrack(t, stream));
-
-        // create offer
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        L('[PC][sender] sending offer');
-        socket.emit('offer', offer);
-
-        // keep NAT alive (send small ping every 5s)
-        keepaliveInterval = setInterval(() => {
-          try { dc && dc.readyState === 'open' && dc.send('ping'); } catch(e) {}
-        }, 5000);
-
-        stopBtn.disabled = false;
-      } catch (err) {
-        L('[START ERR] ' + err);
-        startBtn.disabled = false;
-      }
+      pc.onicecandidate = e => {
+        if (e.candidate) socket.emit('candidate', e.candidate);
+      };
     }
 
-    function stop() {
-      if (keepaliveInterval) clearInterval(keepaliveInterval);
-      if (stream) stream.getTracks().forEach(t => t.stop());
-      if (pc) pc.close();
-      pc = null; stream = null;
-      localVideo.srcObject = null;
-      startBtn.disabled = false;
-      stopBtn.disabled = true;
-      statusEl.textContent = 'status: stopped';
-      L('[LOCAL] stopped.');
-    }
-
-    startBtn.onclick = start;
-    stopBtn.onclick = stop;
-
-    socket.on('connect', () => L('[SOCKET][sender] connected ' + socket.id));
     socket.on('answer', async (answer) => {
-      try {
-        L('[SOCKET][sender] got answer');
-        await pc.setRemoteDescription(new RTCSessionDescription(answer));
-      } catch (e) { L('[sender] setRemoteDescription err ' + e); }
-    });
-    socket.on('ice-candidate', async (cand) => {
-      try {
-        await pc.addIceCandidate(new RTCIceCandidate(cand));
-        L('[SOCKET][sender] added remote candidate');
-      } catch (e) { L('[sender] addIceCandidate err ' + e); }
+      await pc.setRemoteDescription(answer);
     });
 
-    // status quick check: print selected candidate-pair after connected
-    async function logStats() {
-      if (!pc) return;
+    socket.on('candidate', async (candidate) => {
       try {
-        const stats = await pc.getStats();
-        stats.forEach(report => {
-          if (report.type === 'candidate-pair' && report.state === 'succeeded') {
-            L('[STATS] selected pair id=' + report.id + ' local=' + report.localCandidateId + ' remote=' + report.remoteCandidateId);
-            // find local/remote candidate objects
-            const local = stats.get(report.localCandidateId);
-            const remote = stats.get(report.remoteCandidateId);
-            if (local && remote) {
-              L('[STATS] local candidate type=' + local.candidateType + ' addr=' + local.address);
-              L('[STATS] remote candidate type=' + remote.candidateType + ' addr=' + remote.address);
-            }
-          }
-        });
-      } catch (e) {}
-      setTimeout(logStats, 3000);
-    }
-    setTimeout(logStats, 5000);
+        await pc.addIceCandidate(candidate);
+      } catch (err) {
+        console.error("Error adding candidate", err);
+      }
+    });
+
+    start();
   </script>
 </body>
 </html>
-
