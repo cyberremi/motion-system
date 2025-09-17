@@ -4,6 +4,263 @@
   <meta charset="utf-8">
   <title>Dashboard</title>
 </head>
+
+  <style>
+    /* ===== GLOBAL RESET ===== */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: "Inter", Arial, sans-serif;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  line-height: 1.6;
+  font-size: 14px;
+}
+
+:root {
+  --bg: #f4f6f9;
+  --fg: #1a1a1a;
+  --card-bg: #fff;
+  --accent: #007bff;
+  --border: #ddd;
+  --shadow: rgba(0, 0, 0, 0.08);
+}
+
+body.dark-mode {
+  --bg: #181a1f;
+  --fg: #e6e6e6;
+  --card-bg: #22252b;
+  --accent: #4dabf7;
+  --border: #444;
+  --shadow: rgba(0, 0, 0, 0.5);
+}
+
+/* ===== HEADER ===== */
+header {
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 20px;
+  box-shadow: 0 2px 6px var(--shadow);
+  margin-bottom: 20px;
+}
+
+header h2 {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--fg);
+}
+
+/* ===== LAYOUT ===== */
+.wrap {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding: 0 20px 40px;
+}
+
+.left, .right {
+  flex: 1;
+  min-width: 320px;
+}
+
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 2px 6px var(--shadow);
+  margin-bottom: 20px;
+}
+
+h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  color: var(--fg);
+}
+
+/* ===== VIDEO PREVIEW ===== */
+#preview, #liveImg {
+  width: 100%;
+  max-height: 280px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  object-fit: cover;
+  display: block;
+}
+
+.video-box {
+  position: relative;
+  margin: 20px auto;
+  width: 100%;
+  max-width: 600px;
+}
+
+#overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+/* ===== STATUS / LOG ===== */
+#status {
+  font-size: 13px;
+  color: var(--accent);
+  margin-top: 8px;
+}
+
+#log {
+  background: #111;
+  color: #0f0;
+  font-family: monospace;
+  font-size: 12px;
+  padding: 10px;
+  border-radius: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+  margin: 20px;
+}
+
+/* ===== EVENTS LIST ===== */
+#events {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.ev {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.ev:last-child { border-bottom: none; }
+
+.ev.alert {
+  color: #ff4d4f;
+  font-weight: bold;
+}
+
+/* ===== CHARTS ===== */
+#chart, #detectionChart {
+  width: 100% !important;
+  height: auto !important;
+}
+
+/* ===== COMMENTS ===== */
+.comments {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin: 20px;
+  box-shadow: 0 2px 6px var(--shadow);
+}
+
+#commentList {
+  list-style: none;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+
+#commentList li {
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+#commentForm {
+  display: flex;
+  gap: 8px;
+}
+
+#commentInput {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+#commentInput:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+#commentForm button {
+  padding: 8px 14px;
+  border: none;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#commentForm button:hover {
+  background: #0056b3;
+}
+
+/* ===== CONTROLS ===== */
+.controls {
+  display: flex;
+  gap: 10px;
+  margin: 20px;
+  flex-wrap: wrap;
+}
+
+.controls button {
+  padding: 8px 14px;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--accent);
+  color: #fff;
+  transition: background 0.2s;
+}
+
+.controls button:hover {
+  background: #0056b3;
+}
+
+/* ===== MOBILE ===== */
+@media (max-width: 768px) {
+  .wrap {
+    flex-direction: column;
+  }
+
+  .left, .right, .video-box {
+    width: 100%;
+  }
+
+  #commentForm {
+    flex-direction: column;
+  }
+
+  #commentForm button {
+    width: 100%;
+  }
+
+  .controls {
+    flex-direction: column;
+  }
+
+  .controls button {
+    width: 100%;
+  }
+}
+
+  </style>
 <body>
   <h2>Dashboard Viewer</h2>
   <video id="remoteVideo" autoplay playsinline></video>
@@ -69,3 +326,4 @@
   </script>
 </body>
 </html>
+
