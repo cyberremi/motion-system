@@ -162,29 +162,34 @@
     setTimeout(()=> overlay.style.border = "none", 300);
   }
 
-  // Faster frame sending with dataURL
-  async function scheduleSend() {
-    if (!running) return;
-    const intervalMs = Math.max(30, parseInt(intervalInput.value || '80')); // ~12 FPS
-    try {
-      sctx.drawImage(video, 0, 0, snap.width, snap.height);
-      const quality = Math.min(1, Math.max(0.2, parseFloat(qualityInput.value || '0.5')));
-      const jpegData = snap.toDataURL('image/jpeg', quality);
-
-      // send as base64 in body
-      const resp = await fetch('/frame', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ frame: jpegData })
-      });
-
-      if (!resp.ok) log('[POST ERR] non-OK response');
-    } catch (err) {
-      log('[POST ERR] ' + err.message);
-    } finally {
-      sendTimer = setTimeout(scheduleSend, intervalMs);
-    }
+ // Sends snapshot as real JPEG file (dashboard expects this)
+async function scheduleSend() {
+  if (!running) return;
+  const intervalMs = Math.max(80, parseInt(intervalInput.value || '150')); // ~6–12 fps
+  try {
+    sctx.drawImage(video, 0, 0, snap.width, snap.height);
+    const quality = Math.min(1, Math.max(0.3, parseFloat(qualityInput.value || '0.6')));
+    snap.toBlob(async (blob) => {
+      if (!blob) {
+        sendTimer = setTimeout(scheduleSend, intervalMs);
+        return;
+      }
+      try {
+        const fd = new FormData();
+        fd.append('frame', blob, 'frame.jpg');
+        await fetch('/frame', { method: 'POST', body: fd });
+      } catch (err) {
+        log('[POST ERR] ' + err.message);
+      } finally {
+        sendTimer = setTimeout(scheduleSend, intervalMs);
+      }
+    }, 'image/jpeg', quality);
+  } catch (err) {
+    console.error('[SNAP ERR]', err);
+    sendTimer = setTimeout(scheduleSend, intervalMs);
   }
+}
+
 
   startBtn.onclick = start;
   stopBtn.onclick = stop;
@@ -195,5 +200,6 @@
 
 </body>
 </html>
+
 
 
