@@ -6,39 +6,36 @@
 </head>
 <body>
   <h2>Camera Sender</h2>
-  <video id="preview" autoplay playsinline></video>
+  <button id="startBtn">Start Camera</button>
+  <video id="localVideo" autoplay playsinline muted></video>
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const socket = io();
-
     const pc = new RTCPeerConnection();
 
-    // Send ICE candidates
-    pc.onicecandidate = ({ candidate }) => {
-      if (candidate) socket.emit('ice-candidate', candidate);
+    // Show local video
+    document.getElementById("startBtn").onclick = async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      document.getElementById("localVideo").srcObject = stream;
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socket.emit("offer", offer);
     };
 
-    // Get camera
-    navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-      .then(stream => {
-        document.getElementById('preview').srcObject = stream;
-        stream.getTracks().forEach(track => pc.addTrack(track, stream));
-        return pc.createOffer();
-      })
-      .then(offer => {
-        pc.setLocalDescription(offer);
-        socket.emit('offer', offer);
-      });
-
-    // Receive answer
-    socket.on('answer', async answer => {
+    // ICE candidates from viewer
+    socket.on("answer", async answer => {
       await pc.setRemoteDescription(new RTCSessionDescription(answer));
     });
 
-    // Receive ICE from dashboard
-    socket.on('ice-candidate', async cand => {
-      try { await pc.addIceCandidate(new RTCIceCandidate(cand)); } catch(e) {}
+    pc.onicecandidate = ({ candidate }) => {
+      if (candidate) socket.emit("ice-candidate", candidate);
+    };
+
+    socket.on("ice-candidate", cand => {
+      pc.addIceCandidate(new RTCIceCandidate(cand));
     });
   </script>
 </body>
