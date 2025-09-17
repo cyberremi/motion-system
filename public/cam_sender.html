@@ -2,143 +2,193 @@
 <html>
 <head>
   <meta charset="utf-8">
+  <title>Camera Sender — Optimized</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>AI CCTV Sender</title>
   <style>
-    body {
-      margin: 0;
-      font-family: system-ui, sans-serif;
-      background: #0a0a0a;
-      color: #eee;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
-    }
-    header {
-      padding: 12px;
-      text-align: center;
-      width: 100%;
-      background: linear-gradient(90deg, #111, #222);
-      border-bottom: 1px solid #333;
-    }
-    video {
-      width: 100%;
-      max-width: 500px;
-      border: 2px solid #333;
-      border-radius: 12px;
-      box-shadow: 0 0 15px rgba(0,0,0,0.6);
-      margin-top: 10px;
-    }
-    .controls {
-      margin-top: 10px;
-      display: flex;
-      gap: 10px;
-      justify-content: center;
-    }
-    button {
-      padding: 10px 16px;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      font-weight: bold;
-      background: #1a1a1a;
-      color: #eee;
-      transition: 0.2s;
-    }
-    button:hover { background: #333; }
-    input[type=number] {
-      width: 60px;
-      padding: 6px;
-      border-radius: 6px;
-      border: 1px solid #444;
-      background: #111;
-      color: #eee;
-      text-align: center;
-    }
-    footer {
-      margin-top: auto;
-      padding: 10px;
-      font-size: 0.8em;
-      color: #888;
-    }
+    :root{--bg:#071026;--card:#0f1724;--text:#e8eefc;--accent:#4da3ff}
+    body{margin:0;font-family:Inter,system-ui,Arial;background:var(--bg);color:var(--text);padding:14px}
+    .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.02));border:1px solid rgba(255,255,255,0.03);padding:14px;border-radius:10px;max-width:720px;margin:0 auto}
+    h2{margin:0 0 10px 0;color:var(--accent)}
+    video, canvas{width:100%;border-radius:8px;background:#000;display:block}
+    .controls{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}
+    input[type=number], input[type=range] {padding:6px;border-radius:6px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:var(--text)}
+    button{background:var(--accent);border:0;padding:8px 12px;border-radius:8px;color:#07102a;cursor:pointer;font-weight:700}
+    #log{margin-top:8px;background:#07182a;padding:8px;border-radius:6px;height:140px;overflow:auto;font-family:monospace;font-size:13px}
+    label.small{font-size:12px;color:#9fb0da}
   </style>
 </head>
 <body>
-  <header>
-    <h2>📡 AI CCTV — Sender</h2>
-  </header>
+  <div class="card">
+    <h2>Camera Sender — Publisher</h2>
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="overlay" style="position:relative;margin-top:8px"></canvas>
 
-  <video id="video" autoplay muted playsinline></video>
+    <div class="controls">
+      <button id="startBtn">Start</button>
+      <button id="stopBtn" disabled>Stop</button>
+      <label class="small">Interval(ms): <input id="intervalInput" type="number" value="100" step="10" style="width:90px"></label>
+      <label class="small">Quality: <input id="qualityInput" type="number" value="0.8" step="0.05" min="0.2" max="1.0" style="width:80px"></label>
+      <label class="small">Detect thresh: <input id="threshInput" type="number" value="0.45" step="0.05" min="0.1" max="1.0" style="width:80px"></label>
+    </div>
 
-  <div class="controls">
-    <button id="start">▶ Start</button>
-    <button id="stop" disabled>⏹ Stop</button>
-    <label>Q:
-      <input id="quality" type="number" min="0.2" max="1" step="0.1" value="0.7">
-    </label>
+    <div id="log"></div>
   </div>
 
-  <canvas id="snapshot" style="display:none"></canvas>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.9.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
 
-  <footer>NextGen CCTV Sender v1.0</footer>
+  <script>
+    const logEl = document.getElementById('log');
+    const video = document.getElementById('video');
+    const overlay = document.getElementById('overlay');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const intervalInput = document.getElementById('intervalInput');
+    const qualityInput = document.getElementById('qualityInput');
+    const threshInput = document.getElementById('threshInput');
 
-<script>
-const video = document.getElementById('video');
-const startBtn = document.getElementById('start');
-const stopBtn = document.getElementById('stop');
-const snapshotCanvas = document.getElementById('snapshot');
-const snapshotCtx = snapshotCanvas.getContext('2d');
-const qualityInput = document.getElementById('quality');
+    const socket = io();
+    let model = null;
+    let stream = null;
+    let running = false;
+    let sendTimer = null;
 
-let running = false;
+    const snap = document.createElement('canvas');
+    const sctx = snap.getContext('2d');
 
-async function initCamera() {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    video.srcObject = stream;
-  } catch (err) {
-    alert("Camera access denied: " + err.message);
-  }
-}
+    function log(t) {
+      console.log(t);
+      logEl.textContent += `[${new Date().toLocaleTimeString()}] ${t}\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
 
-async function scheduleSend() {
-  if (!running) return;
-
-  snapshotCanvas.width = video.videoWidth;
-  snapshotCanvas.height = video.videoHeight;
-  snapshotCtx.drawImage(video, 0, 0, snapshotCanvas.width, snapshotCanvas.height);
-
-  const quality = Math.min(1, Math.max(0.2, parseFloat(qualityInput.value || '0.7')));
-  snapshotCanvas.toBlob(async (blob) => {
-    if (blob) {
-      const fd = new FormData();
-      fd.append('frame', blob, 'frame.jpg');
+    async function start() {
+      log('[LOCAL] loading model...');
       try {
-        await fetch('/frame', { method: 'POST', body: fd });
+        model = await cocoSsd.load();
+        log('[MODEL] coco-ssd loaded');
+      } catch (e) {
+        log('[MODEL ERR] ' + e.message);
+        return;
+      }
+
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
+          audio: false
+        });
+        video.srcObject = stream;
+        await video.play();
+      } catch (e) {
+        log('[CAM ERR] ' + e.message);
+        return;
+      }
+
+      overlay.width = video.videoWidth || 640;
+      overlay.height = video.videoHeight || 480;
+
+      snap.width = 640;
+      snap.height = Math.round((video.videoHeight / (video.videoWidth || 640)) * 640) || 480;
+
+      running = true;
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+
+      detectLoop();
+      scheduleSend();
+      log('[LOCAL] started');
+    }
+
+    function stop() {
+      running = false;
+      if (sendTimer) { clearTimeout(sendTimer); sendTimer = null; }
+      if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+      video.srcObject = null;
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      log('[LOCAL] stopped');
+    }
+
+    async function detectLoop() {
+      if (!running) return;
+      if (model && video.readyState >= 2) {
+        try {
+          const preds = await model.detect(video, 6);
+          drawPreds(preds);
+          const threshold = parseFloat(threshInput.value) || 0.45;
+          preds.forEach(p => {
+            if (p.score >= threshold) {
+              // build event
+              const ev = { label: p.class, confidence: p.score, bbox: p.bbox, w: video.videoWidth, h: video.videoHeight };
+              socket.emit('detection', ev);
+              log(`[DETECT] ${ev.label} ${Math.round(ev.confidence*100)}%`);
+            }
+          });
+        } catch (err) {
+          console.warn('detect err', err);
+        }
+      }
+      requestAnimationFrame(detectLoop);
+    }
+
+    function drawPreds(preds) {
+      const ctx = overlay.getContext('2d');
+      overlay.width = video.videoWidth || overlay.width;
+      overlay.height = video.videoHeight || overlay.height;
+      ctx.clearRect(0,0,overlay.width,overlay.height);
+      ctx.strokeStyle = '#00FF77';
+      ctx.lineWidth = 2;
+      ctx.font = '18px Inter, Arial';
+      ctx.fillStyle = 'rgba(0,255,119,0.85)';
+      preds.forEach(p => {
+        const [x,y,w,h] = p.bbox;
+        ctx.strokeRect(x,y,w,h);
+        const txt = `${p.class} ${Math.round(p.score*100)}%`;
+        ctx.fillText(txt, x + 6, y > 18 ? y - 6 : y + 18);
+      });
+    }
+
+    // Sends snapshot to /frame using multipart/form-data (fast)
+    async function scheduleSend() {
+      if (!running) return;
+      const intervalMs = Math.max(40, parseInt(intervalInput.value || '100'));
+      try {
+        // draw to snapshot canvas in source resolution
+        sctx.drawImage(video, 0, 0, snap.width, snap.height);
+        const quality = Math.min(1, Math.max(0.2, parseFloat(qualityInput.value || '0.8')));
+        snap.toBlob(async (blob) => {
+          if (!blob) {
+            sendTimer = setTimeout(scheduleSend, intervalMs);
+            return;
+          }
+          try {
+            const fd = new FormData();
+            fd.append('frame', blob, 'frame.jpg');
+            const resp = await fetch('/frame', { method: 'POST', body: fd });
+            if (resp && resp.ok) {
+              // occasional log
+              if (Math.random() < 0.06) log('[POST] frame uploaded');
+            } else {
+              log('[POST ERR] non-OK response');
+            }
+          } catch (err) {
+            log('[POST ERR] ' + err.message);
+          } finally {
+            sendTimer = setTimeout(scheduleSend, intervalMs);
+          }
+        }, 'image/jpeg', quality);
       } catch (err) {
-        console.warn("[Send error]", err);
+        console.error('[SNAP ERR]', err);
+        sendTimer = setTimeout(scheduleSend, intervalMs);
       }
     }
-    requestAnimationFrame(scheduleSend); // smoother than setTimeout
-  }, 'image/jpeg', quality);
-}
 
-startBtn.onclick = () => {
-  running = true;
-  startBtn.disabled = true;
-  stopBtn.disabled = false;
-  scheduleSend();
-};
+    startBtn.onclick = start;
+    stopBtn.onclick = stop;
 
-stopBtn.onclick = () => {
-  running = false;
-  startBtn.disabled = false;
-  stopBtn.disabled = true;
-};
-
-initCamera();
-</script>
+    socket.on('connect', () => log('[SOCKET] connected ' + socket.id));
+    socket.on('disconnect', () => log('[SOCKET] disconnected ' + socket.id));
+  </script>
 </body>
 </html>
