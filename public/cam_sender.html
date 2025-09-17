@@ -2,198 +2,44 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Camera Sender (Phone) — Optimized</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <style>
-    body{font-family:system-ui;padding:12px}
-    #video, #overlay { width:100%; max-width:640px; display:block; margin: 0 auto; }
-    #controls { margin-top: 8px; text-align:center; }
-    #log { white-space: pre-wrap; margin-top: 8px; background:#f6f6f6; padding:8px; height:140px; overflow:auto; }
-    button{ padding:8px 12px; margin:0 6px; }
-  </style>
+  <title>Camera Sender</title>
 </head>
 <body>
-  <h2>Camera Sender — Publisher</h2>
-  <video id="video" autoplay playsinline muted></video>
-  <canvas id="overlay"></canvas>
-
-  <div id="controls">
-    <button id="startBtn">Start</button>
-    <button id="stopBtn" disabled>Stop</button>
-    Frame interval (ms): <input id="intervalInput" type="number" value="100" step="50" style="width:80px">
-    Quality: <input id="qualityInput" type="number" value="0.8" step="0.05" min="0.2" max="1.0" style="width:60px">
-  </div>
-
-  <div id="log"></div>
+  <h2>Camera Sender</h2>
+  <video id="preview" autoplay playsinline></video>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.9.0/dist/tf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
-
   <script>
-    const video = document.getElementById('video');
-    const overlay = document.getElementById('overlay');
-    const startBtn = document.getElementById('startBtn');
-    const stopBtn = document.getElementById('stopBtn');
-    const intervalInput = document.getElementById('intervalInput');
-    const qualityInput = document.getElementById('qualityInput');
-    const logEl = document.getElementById('log');
+    const socket = io();
 
-    const socket = io(); // relative - same origin
-    let model = null;
-    let stream = null;
-    let running = false;
-    let sendTimer = null;
+    const pc = new RTCPeerConnection();
 
-    // snapshot canvas used only for uploading frames (keeps overlay separate)
-    const snapshotCanvas = document.createElement('canvas');
-    const snapshotCtx = snapshotCanvas.getContext('2d');
+    // Send ICE candidates
+    pc.onicecandidate = ({ candidate }) => {
+      if (candidate) socket.emit('ice-candidate', candidate);
+    };
 
-    function log(t) { console.log(t); logEl.textContent += t + '\n'; logEl.scrollTop = logEl.scrollHeight; }
-
-    async function start() {
-      log('[LOCAL] Loading model...');
-      try {
-        model = await cocoSsd.load();
-        log('[MODEL] coco-ssd loaded');
-      } catch (e) {
-        log('[MODEL ERR] ' + e.message);
-        return;
-      }
-
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
-          audio: false
-        });
-        video.srcObject = stream;
-        await video.play();
-      } catch (e) {
-        log('[CAM ERR] ' + e.message);
-        return;
-      }
-
-      // set overlay size to match video
-      overlay.width = video.videoWidth || 640;
-      overlay.height = video.videoHeight || 480;
-
-      // snapshot canvas size (controls upload resolution)
-      snapshotCanvas.width = 640;
-      snapshotCanvas.height = 480;
-
-      running = true;
-      startBtn.disabled = true;
-      stopBtn.disabled = false;
-
-      // start detection loop and sender
-      detectLoop();
-      scheduleSend();
-      log(`[LOCAL] started. sending frames every ${intervalInput.value} ms`);
-    }
-
-    function stop() {
-      running = false;
-      if (sendTimer) { clearTimeout(sendTimer); sendTimer = null; }
-      if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
-      video.srcObject = null;
-      startBtn.disabled = false;
-      stopBtn.disabled = true;
-      log('[LOCAL] stopped.');
-    }
-
-    async function detectLoop() {
-      if (!running) return;
-      if (model && video.readyState === 4) {
-        try {
-          const predictions = await model.detect(video, 5);
-          drawPredictions(predictions);
-          // emit events for detections over threshold
-          predictions.forEach(pred => {
-            if (pred.score >= 0.45) {
-              const ev = {
-                label: pred.class,
-                confidence: pred.score,
-                bbox: pred.bbox,
-                w: video.videoWidth,
-                h: video.videoHeight
-              };
-              socket.emit('detection', ev);
-              log(`[DETECT] ${ev.label} ${Math.round(ev.confidence*100)}%`);
-            }
-          });
-        } catch (err) {
-          console.warn('detect err', err);
-        }
-      }
-      requestAnimationFrame(detectLoop);
-    }
-
-    function drawPredictions(predictions) {
-      const ctx = overlay.getContext('2d');
-      overlay.width = video.videoWidth || overlay.width;
-      overlay.height = video.videoHeight || overlay.height;
-      ctx.clearRect(0,0,overlay.width,overlay.height);
-      ctx.strokeStyle = '#00FF00';
-      ctx.lineWidth = 2;
-      ctx.font = '16px Arial';
-      ctx.fillStyle = 'rgba(0,255,0,0.6)';
-
-      predictions.forEach(p => {
-        const [x,y,w,h] = p.bbox;
-        ctx.strokeRect(x,y,w,h);
-        const label = `${p.class} ${Math.round(p.score*100)}%`;
-        ctx.fillText(label, x + 4, y > 16 ? y - 4 : y + 14);
+    // Get camera
+    navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+      .then(stream => {
+        document.getElementById('preview').srcObject = stream;
+        stream.getTracks().forEach(track => pc.addTrack(track, stream));
+        return pc.createOffer();
+      })
+      .then(offer => {
+        pc.setLocalDescription(offer);
+        socket.emit('offer', offer);
       });
-    }
 
-    // send latest snapshot to server (one at a time, no queue)
-    let lastSend = 0;
-    async function scheduleSend() {
-      if (!running) return;
-      const intervalMs = Math.max(60, parseInt(intervalInput.value || '100')); // clamp min 60ms
-      const now = Date.now();
-      // always draw latest video frame into snapshot canvas
-      try {
-        snapshotCtx.drawImage(video, 0, 0, snapshotCanvas.width, snapshotCanvas.height);
-        // compression quality from UI
-        const quality = Math.min(1, Math.max(0.2, parseFloat(qualityInput.value || '0.8')));
-        snapshotCanvas.toBlob(async (blob) => {
-          if (!blob) {
-            // try again later
-            sendTimer = setTimeout(scheduleSend, intervalMs);
-            return;
-          }
-          try {
-            const fd = new FormData();
-            fd.append('frame', blob, 'frame.jpg');
-            const resp = await fetch('/frame', { method: 'POST', body: fd });
-            // not too chatty in logs
-            if (resp && resp.ok) {
-              // log less frequently to avoid flooding
-              if (Date.now() - lastSend > 2000) {
-                log('[POST] frame uploaded');
-                lastSend = Date.now();
-              }
-            }
-          } catch (err) {
-            console.error('[POST ERR] ', err);
-            log('[POST ERR] ' + err.message);
-          } finally {
-            sendTimer = setTimeout(scheduleSend, intervalMs);
-          }
-        }, 'image/jpeg', quality);
-      } catch (err) {
-        console.error('[SNAP ERR] ', err);
-        sendTimer = setTimeout(scheduleSend, intervalMs);
-      }
-    }
+    // Receive answer
+    socket.on('answer', async answer => {
+      await pc.setRemoteDescription(new RTCSessionDescription(answer));
+    });
 
-    // UI hooks
-    startBtn.onclick = start;
-    stopBtn.onclick = stop;
-
-    socket.on('connect', () => log('[SOCKET] connected ' + socket.id));
-    socket.on('disconnect', () => log('[SOCKET] disconnected'));
+    // Receive ICE from dashboard
+    socket.on('ice-candidate', async cand => {
+      try { await pc.addIceCandidate(new RTCIceCandidate(cand)); } catch(e) {}
+    });
   </script>
 </body>
 </html>
