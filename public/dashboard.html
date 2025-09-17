@@ -2,95 +2,112 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Dashboard — Live & AI Events</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AI CCTV Dashboard</title>
   <style>
-    body{font-family:system-ui;padding:12px}
-    #wrap{display:flex;gap:12px;flex-wrap:wrap}
-    #left{flex:1;min-width:320px}
-    #right{width:360px}
-    #preview {width:100%;background:#000;border:1px solid #222}
-    #events{height:360px;overflow:auto;background:#fafafa;padding:8px}
-    li.event{padding:6px;border-bottom:1px solid #eee}
-    .alert{color:#b00;font-weight:bold}
-    .small{font-size:12px;color:#666}
+    body {
+      margin: 0;
+      font-family: system-ui, sans-serif;
+      background: #0a0a0a;
+      color: #eee;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      height: 100vh;
+    }
+    header {
+      width: 100%;
+      padding: 14px;
+      text-align: center;
+      background: linear-gradient(90deg, #111, #222);
+      border-bottom: 1px solid #333;
+    }
+    header h2 {
+      margin: 0;
+    }
+    .container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      padding: 12px;
+    }
+    .card {
+      background: #111;
+      border: 1px solid #333;
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.6);
+      max-width: 600px;
+      width: 100%;
+      text-align: center;
+    }
+    .card h3 {
+      margin-top: 0;
+      font-size: 1.2em;
+      color: #ccc;
+    }
+    img {
+      width: 100%;
+      border-radius: 12px;
+      border: 2px solid #333;
+      background: #000;
+    }
+    .status {
+      margin-top: 8px;
+      font-size: 0.9em;
+      color: #999;
+    }
+    footer {
+      padding: 8px;
+      font-size: 0.8em;
+      color: #888;
+      text-align: center;
+      width: 100%;
+      border-top: 1px solid #222;
+      background: #0d0d0d;
+    }
   </style>
 </head>
 <body>
-  <h2>Dashboard — Live Preview & Events</h2>
-  <div id="wrap">
-    <div id="left">
-      <img id="preview" src="/video" alt="live preview">
-      <div id="stats">
-        <p id="status">Status: connecting…</p>
-        <p class="small">If the preview is blank, make sure camera sender is running and posting frames. Warm up the sender (start camera) before expecting live video.</p>
-        <canvas id="chart" width="600" height="150"></canvas>
-      </div>
-    </div>
+  <header>
+    <h2>📺 AI CCTV — Dashboard</h2>
+  </header>
 
-    <div id="right">
-      <h3>Detections</h3>
-      <audio id="alarm" src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" preload="auto"></audio>
-      <ul id="events"></ul>
+  <div class="container">
+    <div class="card">
+      <h3>Live Camera Feed</h3>
+      <img id="live" src="/video" alt="Live feed">
+      <div class="status">Streaming...</div>
     </div>
   </div>
 
-  <script src="/socket.io/socket.io.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <script>
-    const socket = io();
-    const statusEl = document.getElementById('status');
-    const eventsEl = document.getElementById('events');
-    const alarm = document.getElementById('alarm');
+  <footer>NextGen CCTV Dashboard v1.0</footer>
 
-    // chart setup
-    const ctx = document.getElementById('chart').getContext('2d');
-    const labelsOrder = ['person','dog','cat','bird','other'];
-    const data = { labels: labelsOrder, datasets: [{ label: 'Detections', data: [0,0,0,0,0], backgroundColor: ['#6fa8dc','#a4c2f4','#ffd966','#b6d7a8','#d9d2e9'] }] };
-    const chart = new Chart(ctx, { type: 'bar', data, options: { animation: false, responsive: true } });
+<script>
+const live = document.getElementById("live");
+let lastTime = Date.now();
 
-    function addEvent(ev) {
-      const time = new Date(ev.time).toLocaleTimeString();
-      const label = ev.label || 'unknown';
-      const conf = Math.round((ev.confidence||0)*100);
-      const li = document.createElement('li');
-      li.className = 'event';
-      li.innerHTML = `<strong>${label}</strong> ${conf}% — <small>${time}</small>`;
-      eventsEl.insertBefore(li, eventsEl.firstChild);
+// Refresh feed smoothly by reloading src every ~200ms
+function refreshFeed() {
+  const now = Date.now();
+  live.src = `/video?t=${now}`;
+  lastTime = now;
+  setTimeout(refreshFeed, 200); // ~5fps (can increase/decrease)
+}
 
-      // update chart counts
-      const idx = labelsOrder.indexOf(label) >= 0 ? labelsOrder.indexOf(label) : labelsOrder.length - 1;
-      chart.data.datasets[0].data[idx] += 1;
-      chart.update('none');
+// fallback if image fails to load
+live.onerror = () => {
+  document.querySelector(".status").innerText = "⚠️ Waiting for stream...";
+};
 
-      if (label === 'person') {
-        alarm.play().catch(()=>{ /* may require user gesture to allow */ });
-        li.classList.add('alert');
-      }
+// update timestamp
+live.onload = () => {
+  document.querySelector(".status").innerText = "✅ Live feed active";
+};
 
-      while (eventsEl.children.length > 200) eventsEl.removeChild(eventsEl.lastChild);
-    }
-
-    socket.on('connect', () => {
-      statusEl.textContent = 'Status: connected to server';
-      console.log('[SOCKET] connected', socket.id);
-    });
-
-    socket.on('status', (s) => {
-      statusEl.textContent = 'Status: ' + (s.hasFrame ? 'has frame' : 'no frame yet');
-      if (s.events && s.events.length) {
-        s.events.slice(0, 50).reverse().forEach(e => addEvent(e));
-      }
-    });
-
-    socket.on('detection', (ev) => {
-      console.log('[EV]', ev.label, ev.confidence);
-      addEvent(ev);
-    });
-
-    socket.on('disconnect', () => {
-      statusEl.textContent = 'Status: disconnected';
-    });
-  </script>
+refreshFeed();
+</script>
 </body>
 </html>
