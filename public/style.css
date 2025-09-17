@@ -78,3 +78,74 @@ footer {
   color: var(--text-muted);
   border-top: 1px solid var(--border);
 }
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 20px;
+  background: #f9f9f9;
+  color: #333;
+  transition: background 0.3s, color 0.3s;
+}
+
+.dark-mode {
+  background: #121212;
+  color: #f1f1f1;
+}
+
+canvas {
+  max-width: 100%;
+  margin-bottom: 20px;
+}
+
+.comments {
+  margin: 20px 0;
+}
+.comments ul {
+  list-style: none;
+  padding: 0;
+  max-height: 150px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  padding: 10px;
+  background: #fff;
+}
+.comments li {
+  margin-bottom: 8px;
+}
+.comments form {
+  display: flex;
+  gap: 10px;
+}
+.comments input {
+  flex: 1;
+  padding: 8px;
+}
+.comments button {
+  padding: 8px 12px;
+}
+
+.controls {
+  margin-top: 20px;
+  display: flex;
+  gap: 10px;
+}
+.controls button {
+  padding: 10px 15px;
+  border: none;
+  cursor: pointer;
+  background: #007bff;
+  color: #fff;
+  border-radius: 4px;
+}
+.controls button:hover {
+  background: #0056b3;
+}
+
+@media (max-width: 600px) {
+  body {
+    padding: 10px;
+  }
+  .controls {
+    flex-direction: column;
+  }
+}
