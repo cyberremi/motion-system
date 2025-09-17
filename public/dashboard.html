@@ -2,68 +2,94 @@
 <html>
 <head>
   <meta charset="utf-8">
+  <title>Dashboard — Live & AI Events</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Dashboard Viewer</title>
   <style>
-    body { font-family: system-ui, Arial; padding: 12px; }
-    video { width: 100%; max-width: 720px; background: black; }
+    body{font-family:system-ui;padding:12px}
+    #wrap{display:flex;gap:12px;flex-wrap:wrap}
+    #left{flex:1;min-width:320px}
+    #right{width:360px}
+    #preview {width:100%;background:#000;border:1px solid #222}
+    #events{height:360px;overflow:auto;background:#fafafa;padding:8px}
+    li.event{padding:6px;border-bottom:1px solid #eee}
+    .alert{color:#b00;font-weight:bold}
+    .small{font-size:12px;color:#666}
   </style>
 </head>
 <body>
-  <h2>Dashboard Viewer</h2>
-  <video id="remoteVideo" autoplay playsinline></video>
-  <p id="status">status: disconnected</p>
+  <h2>Dashboard — Live Preview & Events</h2>
+  <div id="wrap">
+    <div id="left">
+      <img id="preview" src="/video" alt="live preview">
+      <div id="stats">
+        <p id="status">Status: connecting…</p>
+        <p class="small">If the preview is blank, make sure camera sender is running and posting frames. Warm up the sender (start camera) before expecting live video.</p>
+        <canvas id="chart" width="600" height="150"></canvas>
+      </div>
+    </div>
+
+    <div id="right">
+      <h3>Detections</h3>
+      <audio id="alarm" src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" preload="auto"></audio>
+      <ul id="events"></ul>
+    </div>
+  </div>
 
   <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script>
     const socket = io();
-    let pc;
+    const statusEl = document.getElementById('status');
+    const eventsEl = document.getElementById('events');
+    const alarm = document.getElementById('alarm');
 
-    const iceConfig = {
-      iceServers: [
-        {
-          urls: [
-            "stun:fr-turn3.xirsys.com",
-            "turn:fr-turn3.xirsys.com:80?transport=udp",
-            "turn:fr-turn3.xirsys.com:3478?transport=udp",
-            "turn:fr-turn3.xirsys.com:80?transport=tcp",
-            "turn:fr-turn3.xirsys.com:3478?transport=tcp",
-            "turns:fr-turn3.xirsys.com:443?transport=tcp",
-            "turns:fr-turn3.xirsys.com:5349?transport=tcp"
-          ],
-          username: "KpaoU7W39y48OAReHa1rfaC43p88PFWamtxFo57v-PnylGGxV7bN3RPB3XZS1ZSTAAAAAGjKiE9uZXh0Z2Vu",
-          credential: "13dbac6c-93ae-11f0-8b07-e25abca605ee"
-        }
-      ]
-    };
+    // chart setup
+    const ctx = document.getElementById('chart').getContext('2d');
+    const labelsOrder = ['person','dog','cat','bird','other'];
+    const data = { labels: labelsOrder, datasets: [{ label: 'Detections', data: [0,0,0,0,0], backgroundColor: ['#6fa8dc','#a4c2f4','#ffd966','#b6d7a8','#d9d2e9'] }] };
+    const chart = new Chart(ctx, { type: 'bar', data, options: { animation: false, responsive: true } });
 
-    socket.on("offer", async (offer) => {
-      pc = new RTCPeerConnection(iceConfig);
+    function addEvent(ev) {
+      const time = new Date(ev.time).toLocaleTimeString();
+      const label = ev.label || 'unknown';
+      const conf = Math.round((ev.confidence||0)*100);
+      const li = document.createElement('li');
+      li.className = 'event';
+      li.innerHTML = `<strong>${label}</strong> ${conf}% — <small>${time}</small>`;
+      eventsEl.insertBefore(li, eventsEl.firstChild);
 
-      pc.oniceconnectionstatechange = () => {
-        document.getElementById("status").innerText = "status: " + pc.iceConnectionState;
-      };
+      // update chart counts
+      const idx = labelsOrder.indexOf(label) >= 0 ? labelsOrder.indexOf(label) : labelsOrder.length - 1;
+      chart.data.datasets[0].data[idx] += 1;
+      chart.update('none');
 
-      pc.ontrack = (event) => {
-        document.getElementById("remoteVideo").srcObject = event.streams[0];
-      };
+      if (label === 'person') {
+        alarm.play().catch(()=>{ /* may require user gesture to allow */ });
+        li.classList.add('alert');
+      }
 
-      pc.onicecandidate = (e) => {
-        if (e.candidate) socket.emit("candidate", e.candidate);
-      };
+      while (eventsEl.children.length > 200) eventsEl.removeChild(eventsEl.lastChild);
+    }
 
-      await pc.setRemoteDescription(new RTCSessionDescription(offer));
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      socket.emit("answer", answer);
+    socket.on('connect', () => {
+      statusEl.textContent = 'Status: connected to server';
+      console.log('[SOCKET] connected', socket.id);
     });
 
-    socket.on("candidate", async (candidate) => {
-      try {
-        await pc.addIceCandidate(new RTCIceCandidate(candidate));
-      } catch (err) {
-        console.error("Error adding ICE candidate", err);
+    socket.on('status', (s) => {
+      statusEl.textContent = 'Status: ' + (s.hasFrame ? 'has frame' : 'no frame yet');
+      if (s.events && s.events.length) {
+        s.events.slice(0, 50).reverse().forEach(e => addEvent(e));
       }
+    });
+
+    socket.on('detection', (ev) => {
+      console.log('[EV]', ev.label, ev.confidence);
+      addEvent(ev);
+    });
+
+    socket.on('disconnect', () => {
+      statusEl.textContent = 'Status: disconnected';
     });
   </script>
 </body>
