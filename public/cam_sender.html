@@ -6,6 +6,79 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
 
 </head>
+<style>
+ /* ===== RESET ===== */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: "Inter", Arial, sans-serif;
+}
+
+body {
+  background: #f4f6f9;
+  color: #1a1a1a;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 100vh;
+  padding: 20px;
+}
+
+h2 {
+  margin-bottom: 20px;
+  font-size: 22px;
+  font-weight: 700;
+  color: #007bff;
+  text-align: center;
+}
+
+/* ===== VIDEO PREVIEW ===== */
+#preview {
+  width: 100%;
+  max-width: 600px;
+  border-radius: 12px;
+  border: 2px solid #007bff;
+  background: #000;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+/* ===== STATUS MESSAGE (optional future use) ===== */
+.status {
+  margin-top: 12px;
+  font-size: 14px;
+  color: #555;
+  text-align: center;
+}
+
+/* ===== DARK MODE SUPPORT ===== */
+body.dark-mode {
+  background: #181a1f;
+  color: #e6e6e6;
+}
+
+body.dark-mode h2 {
+  color: #4dabf7;
+}
+
+body.dark-mode #preview {
+  border-color: #4dabf7;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+
+/* ===== MOBILE ===== */
+@media (max-width: 768px) {
+  h2 {
+    font-size: 18px;
+  }
+
+  #preview {
+    max-width: 100%;
+  }
+}
+ 
+</style>
 <body>
   <div class="card">
     <h2>Camera Sender — Publisher</h2>
@@ -189,6 +262,7 @@ async function scheduleSend() {
 
 </body>
 </html>
+
 
 
 
