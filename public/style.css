@@ -1,0 +1,80 @@
+/* === Global Pro Styling === */
+:root {
+  --bg-dark: #0e0e10;
+  --bg-card: #1a1a1d;
+  --border: #2a2a2d;
+  --primary: #00c2ff;
+  --text-light: #e0e0e0;
+  --text-muted: #999;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: var(--bg-dark);
+  color: var(--text-light);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+header {
+  padding: 16px;
+  text-align: center;
+  background: linear-gradient(90deg, #0d0d0d, #1a1a1d);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+}
+
+header h2 {
+  margin: 0;
+  font-size: 1.4em;
+  color: var(--primary);
+}
+
+.container {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+}
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.7);
+  max-width: 680px;
+  width: 100%;
+}
+
+.card h3 {
+  margin-top: 0;
+  font-size: 1.2em;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+img, video {
+  width: 100%;
+  border-radius: 12px;
+  border: 2px solid var(--border);
+  background: black;
+}
+
+.status {
+  margin-top: 10px;
+  text-align: center;
+  font-size: 0.9em;
+  color: var(--primary);
+}
+
+footer {
+  padding: 12px;
+  text-align: center;
+  font-size: 0.8em;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+}
