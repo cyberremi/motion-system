@@ -1,115 +1,99 @@
 // server.js
+// Clean, deploy-ready signaling + frame relay server
+
 const express = require('express');
 const http = require('http');
 const path = require('path');
-const https = require('https');
+const multer = require('multer');
 const { Server } = require('socket.io');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
+// multer memory storage
+const storage = multer.memoryStorage();
+const upload = multer({ storage });
+
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
-// XIRSYS: prefer env vars, but fallback to the values you gave earlier
-const XIRSYS_IDENT = process.env.XIRSYS_IDENT || 'nextgen';
-const XIRSYS_SECRET = process.env.XIRSYS_SECRET || 'cdfcfc2c-9246-11f0-af15-4662eff0c0a9';
-const XIRSYS_CHANNEL = process.env.XIRSYS_CHANNEL || 'camera-test';
-const XIRSYS_HOST = process.env.XIRSYS_HOST || 'global.xirsys.net';
+// in-memory store
+let latestFrame = null;
+let events = [];
+const MAX_EVENTS = 500;
 
+// 1. Serve all static assets from /public
 app.use(express.static(PUBLIC_DIR));
 
-// /ice endpoint: fetch TURN/STUN list from Xirsys and return { iceServers: [...] }
-app.get('/ice', async (req, res) => {
+// 2. Fallback root → dashboard.html
+app.get('/', (req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, 'dashboard.html'));
+});
+
+// 3. POST /frame → receive jpeg buffer
+app.post('/frame', upload.single('frame'), (req, res) => {
   try {
-    const bodyStr = JSON.stringify({ format: "urls" });
-    const auth = Buffer.from(`${XIRSYS_IDENT}:${XIRSYS_SECRET}`).toString('base64');
-
-    const options = {
-      hostname: XIRSYS_HOST,
-      path: `/_turn/${XIRSYS_CHANNEL}`,
-      method: 'PUT',
-      headers: {
-        'Authorization': `Basic ${auth}`,
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(bodyStr)
-      }
-    };
-
-    const req2 = https.request(options, (resp) => {
-      let data = '';
-      resp.on('data', (chunk) => data += chunk);
-      resp.on('end', () => {
-        try {
-          const json = JSON.parse(data || '{}');
-
-          // Xirsys typically returns something in json.v.iceServers or json.v?.iceServers
-          const iceServers = (json && (json.v?.iceServers || json.v?.ice_servers || json.iceServers)) || null;
-
-          if (iceServers && Array.isArray(iceServers)) {
-            console.log('[ICE] fetched from Xirsys', iceServers.length, 'servers');
-            return res.json({ iceServers });
-          }
-
-          // fallback – return simple STUN only
-          console.warn('[ICE] xirsys returned unexpected payload, fallback to public STUN', json);
-          return res.json({
-            iceServers: [
-              { urls: 'stun:stun.l.google.com:19302' }
-            ]
-          });
-        } catch (err) {
-          console.error('[ICE] parse error', err);
-          return res.json({
-            iceServers: [
-              { urls: 'stun:stun.l.google.com:19302' }
-            ]
-          });
-        }
-      });
-    });
-
-    req2.on('error', (err) => {
-      console.error('[ICE] request error', err);
-      res.json({
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' }
-        ]
-      });
-    });
-
-    req2.write(bodyStr);
-    req2.end();
-
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ ok: false, msg: 'no frame' });
+    }
+    latestFrame = req.file.buffer;
+    console.log(`[FRAME] received size=${latestFrame.length} bytes`);
+    res.json({ ok: true, timestamp: Date.now() });
   } catch (err) {
-    console.error('[ICE] unexpected error', err);
-    res.json({
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' }
-      ]
-    });
+    console.error('[ERR /frame]', err);
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
-// Simple signaling: relay offer/answer/candidates to everyone (broadcast)
+// 4. MJPEG stream endpoint
+app.get('/video', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'multipart/x-mixed-replace; boundary=frame',
+    'Cache-Control': 'no-cache',
+    'Connection': 'close',
+    'Pragma': 'no-cache'
+  });
+
+  console.log('[VIDEO] client connected to /video');
+
+  const sendFrame = () => {
+    if (!latestFrame) return;
+    try {
+      res.write(`--frame\r\n`);
+      res.write(`Content-Type: image/jpeg\r\n`);
+      res.write(`Content-Length: ${latestFrame.length}\r\n\r\n`);
+      res.write(latestFrame);
+      res.write('\r\n');
+    } catch (e) {
+      clearInterval(interval);
+    }
+  };
+
+  const interval = setInterval(sendFrame, 100); // ~10fps
+
+  req.on('close', () => {
+    console.log('[VIDEO] client disconnected');
+    clearInterval(interval);
+  });
+});
+
+// 5. Socket.IO events
 io.on('connection', socket => {
   console.log('[SOCKET] connected', socket.id);
 
-  socket.on('offer', (offer) => {
-    console.log('[SIGNAL] offer from', socket.id);
-    // send to everyone except sender
-    socket.broadcast.emit('offer', offer);
-  });
+  socket.emit('status', { hasFrame: !!latestFrame, events: events.slice(0, 50) });
 
-  socket.on('answer', (answer) => {
-    console.log('[SIGNAL] answer from', socket.id);
-    socket.broadcast.emit('answer', answer);
-  });
-
-  socket.on('ice-candidate', (cand) => {
-    // cand is RTCIceCandidateInit-like
-    socket.broadcast.emit('ice-candidate', cand);
+  socket.on('detection', (payload) => {
+    try {
+      const ev = { time: Date.now(), ...payload };
+      events.unshift(ev);
+      if (events.length > MAX_EVENTS) events.pop();
+      console.log('[DETECTION]', ev.label, Math.round((ev.confidence || 0) * 100) + '%');
+      io.emit('detection', ev);
+    } catch (e) {
+      console.error('[ERR detection handler]', e);
+    }
   });
 
   socket.on('disconnect', () => {
@@ -117,12 +101,8 @@ io.on('connection', socket => {
   });
 });
 
-// default root -> dashboard
-app.get('/', (req, res) => {
-  res.sendFile(path.join(PUBLIC_DIR, 'dashboard.html'));
-});
-
+// 6. Start server
 server.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-  console.log('Serve files from /public; /ice returns dynamic Xirsys iceServers (or STUN fallback).');
+  console.log(`Server running on port ${PORT}`);
+  console.log(`http://localhost:${PORT}/dashboard.html`);
 });
