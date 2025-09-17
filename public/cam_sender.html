@@ -85,11 +85,11 @@
         return;
       }
 
-      overlay.width = video.videoWidth || 640;
-      overlay.height = video.videoHeight || 480;
+      overlay.width = video.videoWidth || 480;
+      overlay.height = video.videoHeight || 360;
 
-      snap.width = 640;
-      snap.height = Math.round((video.videoHeight / (video.videoWidth || 640)) * 640) || 480;
+      snap.width = 480;
+      snap.height = Math.round((video.videoHeight / (video.videoWidth || 480)) * 480) || 360;
 
       running = true;
       startBtn.disabled = true;
@@ -152,11 +152,11 @@
     // Sends snapshot to /frame using multipart/form-data (fast)
     async function scheduleSend() {
       if (!running) return;
-      const intervalMs = Math.max(40, parseInt(intervalInput.value || '100'));
+      const intervalMs = Math.max(40, parseInt(intervalInput.value || '60'));
       try {
         // draw to snapshot canvas in source resolution
         sctx.drawImage(video, 0, 0, snap.width, snap.height);
-        const quality = Math.min(1, Math.max(0.2, parseFloat(qualityInput.value || '0.8')));
+        const quality = Math.min(1, Math.max(0.2, parseFloat(qualityInput.value || '0.6')));
         snap.toBlob(async (blob) => {
           if (!blob) {
             sendTimer = setTimeout(scheduleSend, intervalMs);
@@ -192,3 +192,4 @@
   </script>
 </body>
 </html>
+
